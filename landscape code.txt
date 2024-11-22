@@ -1,0 +1,28 @@
+// Load the MODIS land cover dataset
+var dataset = ee.ImageCollection('MODIS/006/MCD12Q1')
+                .filter(ee.Filter.date('2016-01-01', '2016-12-31'))
+                .first();
+
+// Select the land cover classification band
+var landCover = dataset.select('LC_Type1');
+
+// Define the region of interest (Sri Lanka)
+var sriLanka = ee.FeatureCollection('USDOS/LSIB_SIMPLE/2017')
+                 .filter(ee.Filter.eq('country_na', 'Sri Lanka'));
+
+// Clip the land cover data to Sri Lanka's boundaries
+var clippedLandCover = landCover.clip(sriLanka);
+
+// Visualize the land cover
+Map.centerObject(sriLanka, 7);
+Map.addLayer(clippedLandCover, {min: 1, max: 17, palette: ['05450a', '086a10', '54a708', '78d203', '009900', 'c6b044', 'dcd159', 'dade48', 'fbff13', 'b6ff05', '27ff87', 'c24f44', 'a5a5a5', 'ff6d4c', '69fff8', 'f9ffa4', '1c0dff']}, 'Land Cover');
+
+// Export the raster data
+Export.image.toDrive({
+  image: clippedLandCover,
+  description: 'SriLanka_LandCover_2016',
+  scale: 500,
+  region: sriLanka.geometry(),
+  crs: 'EPSG:4326',
+  maxPixels: 1e13
+});
