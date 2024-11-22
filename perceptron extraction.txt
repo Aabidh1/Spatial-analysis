@@ -1,0 +1,35 @@
+// Load CHIRPS Pentad dataset
+var chirps = ee.ImageCollection('UCSB-CHG/CHIRPS/PENTAD')
+  .filterDate('2024-01-01', '2024-08-31')
+  .select('precipitation');  // Select the precipitation band
+
+// Calculate the annual sum of precipitation for 2015
+var annualPrecipitation = chirps.sum();
+
+// Load FAO GAUL dataset and filter for Sri Lanka
+var countries = ee.FeatureCollection("FAO/GAUL/2015/level0");
+var sriLanka = countries.filter(ee.Filter.eq('ADM0_NAME', 'Sri Lanka'));
+
+// Clip the precipitation data to the Sri Lanka boundary
+var clippedPrecipitation = annualPrecipitation.clip(sriLanka);
+
+// Define visualization parameters
+var precipitationVis = {
+  min: 0,
+  max: 3000,  // Adjust based on expected range
+  palette: ['white', 'blue', 'cyan', 'green', 'yellow', 'red']
+};
+
+// Center the map on Sri Lanka and add the clipped precipitation layer
+Map.centerObject(sriLanka, 7);
+Map.addLayer(clippedPrecipitation, precipitationVis, 'Annual Precipitation (mm)');
+
+// Export the annual precipitation as a high-resolution GeoTIFF
+Export.image.toDrive({
+  image: clippedPrecipitation,
+  description: 'SriLanka_AnnualPrecipitation_2024_CHIRPS',
+  scale: 500,  // Adjust resolution as needed
+  region: sriLanka.geometry(),
+  crs: 'EPSG:4326',
+  maxPixels: 1e13
+});
