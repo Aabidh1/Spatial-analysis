@@ -1,0 +1,79 @@
+// Define the study area for Sri Lanka
+var sri_lanka = ee.Geometry.Polygon([
+  [[79.5213, 5.9195], [81.8774, 5.9195], [81.8774, 9.8351], [79.5213, 9.8351]]
+]);
+
+// Define the time frame for the analysis
+var startDate = '2024-04-01';
+var endDate = '2024-06-30';
+
+// Retrieve Landsat-8 images (Tier 1, Level 2 Surface Reflectance)
+var landsat8 = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+              .filterDate(startDate, endDate)
+              .filterBounds(sri_lanka);
+
+// Function to calculate NDVI
+var calculateNDVI = function(image) {
+  var ndvi = image.normalizedDifference(['SR_B5', 'SR_B4']).rename('NDVI');
+  return image.addBands(ndvi);
+};
+
+// Function to calculate STR
+var calculateSTR = function(image) {
+  var swir1 = image.select('SR_B6'); // Landsat-8 Band 6 (shortwave infrared 1, 1650 nm)
+  var swir2 = image.select('SR_B7'); // Landsat-8 Band 7 (shortwave infrared 2, 2200 nm)
+  var str = ee.Image.constant(1).subtract(swir1).divide(swir1).pow(2).divide(2).rename('STR');
+  return image.addBands(str);
+};
+
+// Apply the NDVI and STR calculations
+var landsat8NDVIStr = landsat8.map(calculateNDVI).map(calculateSTR);
+
+// Function to calculate soil moisture using OPTRAM model
+var calculateSoilMoistureOPTRAM = function(image) {
+  var sm_optram = image.normalizedDifference(['SR_B5', 'SR_B3']).rename('SoilMoisture_OPTRAM');
+  return image.addBands(sm_optram);
+};
+
+// Apply soil moisture calculations
+var landsat8SMOPTRAM = landsat8NDVIStr.map(calculateSoilMoistureOPTRAM);
+
+// Function to mask water bodies using NDVI threshold
+var maskWaterBodies = function(image) {
+  var ndvi = image.select('NDVI');
+  var waterMask = ndvi.gt(0.1); // Adjust the threshold as needed
+  return image.updateMask(waterMask);
+};
+
+// Apply water mask
+var landsat8SMOPTRAMMasked = landsat8SMOPTRAM.map(maskWaterBodies);
+
+// Filter out negative soil moisture values
+var filterNegativeSoilMoisture = function(image) {
+  var sm_optram = image.select('SoilMoisture_OPTRAM');
+  var positiveMask = sm_optram.gt(0);
+  return image.updateMask(positiveMask);
+};
+
+// Apply the filter for negative soil moisture values
+var landsat8SMOPTRAMFiltered = landsat8SMOPTRAMMasked.map(filterNegativeSoilMoisture);
+
+// Visualize the soil moisture map
+var visParams = {
+  min: 0.0,
+  max: 1.0,
+  palette: ['blue', 'white', 'red']
+};
+
+Map.centerObject(sri_lanka, 7);
+Map.addLayer(landsat8SMOPTRAMFiltered.mean().select('SoilMoisture_OPTRAM'), visParams, 'Mean Soil Moisture (OPTRAM)');
+
+// Export the soil moisture map to Google Drive as GeoTIFF
+Export.image.toDrive({
+  image: landsat8SMOPTRAMFiltered.mean().select('SoilMoisture_OPTRAM'),
+  description: 'soil_moisture_optram2024Q2',
+  scale: 100,  // Adjust scale as per your analysis requirements
+  region: sri_lanka,
+  fileFormat: 'GeoTIFF',
+  maxPixels: 1e13,  // Increase the maxPixels value as needed
+});
